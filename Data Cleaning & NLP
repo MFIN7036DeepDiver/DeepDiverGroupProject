@@ -1,0 +1,228 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Mar 11 14:08:48 2022
+MFIN7036 Text Analytics and Natural Language Processing in Finance and Fintech
+
+@Group: DeepDiver
+@author: Fu Yangyang
+@uid:3035882158
+"""
+
+import pandas as pd
+import os,spacy,re
+from tqdm import tqdm
+from collections import defaultdict
+from spacy.lang.en.stop_words import STOP_WORDS
+
+#Environment
+path=r'C:\Users\hp\Desktop\MFIN7036\DeepDiver'
+target_path=path + os.sep + 'Target_scraping_reviews_data'
+bestbuy_path=path + os.sep + 'Best buy scraping_review_data'
+amazon_path=path + os.sep + 'Amazon_scraping_review'
+
+#Data loading
+target_colgate_df=pd.read_csv(target_path+os.sep+'data_target_colgate_reviews.csv')
+target_oralb_df=pd.read_csv(target_path+os.sep+'data_target_oralb_reviews.csv')
+target_philiip_df=pd.read_csv(target_path+os.sep+'data_target_philiip_reviews.csv')
+
+bestbuy_colgate_df=pd.read_csv(bestbuy_path+os.sep+'data_officialwebsite_colgate_reviews.csv')
+bestbuy_oralb_df=pd.read_csv(bestbuy_path+os.sep+'data_bestbuy_oralb_reviews.csv')
+bestbuy_philiip_df=pd.read_csv(bestbuy_path+os.sep+'data_bestbuy_philiip_reviews.csv')
+
+amazon_colgate_df=pd.read_csv(amazon_path+os.sep+'Amazon colgatesample.csv')
+amazon_oralb_df=pd.read_csv(amazon_path+os.sep+'Amazon OralBsample.csv')
+amazon_philiip_df=pd.read_csv(amazon_path+os.sep+'Amazon Philipssample.csv')
+
+#Mission list for looping later
+missions=[target_colgate_df,
+          target_oralb_df,
+          target_philiip_df,
+          bestbuy_colgate_df,
+          bestbuy_oralb_df,
+          bestbuy_philiip_df,
+          amazon_colgate_df,
+          amazon_oralb_df,
+          amazon_philiip_df]
+
+file_names=['target_colgate',
+       'target_oralb',
+       'target_philiip',
+       'bestbuy_colgate',
+       'bestbuy_oralb',
+       'bestbuy_philiip',
+       'amazon_colgate',
+       'amazon_oralb',
+       'amazon_philiip']
+
+nlp=spacy.load("en_core_web_sm")
+
+def length_count(df):
+    a = []
+    for i in df.index:
+        comments = df['content'][i]
+        if type(comments) is str:
+            a.append(len(comments.split()))
+        else:
+            a.append(0)
+    
+    df["sentence_lenght"] = a
+    return df
+
+def nlpword(datafile,rating=0):
+    token_sum=[]
+    if rating <=5 and rating >0:
+        datafile=datafile[datafile['rating']==rating]
+    elif rating==0:
+        pass
+    else:
+        print('please enter a right rating (1-5), Default without classication words by star')
+        
+    if len(datafile)!=0:        
+        for review in tqdm(datafile['content']):
+            review=review.lower()
+            
+            if '-' in review:
+                review=review.replace('-','')
+            
+            if 'tooth brush' in review:
+                review=review.replace('tooth brush','toothbrush')
+                
+            if '@' in review:
+                review=review.replace('@','')
+                
+                                    
+            try:
+                text = nlp(review)
+                #select token
+                token_list = []
+                for token in text: #词干化
+                    token_list.append(token.lemma_)
+                
+                # Delete the useless words (stop words, symbols)
+                filtered =[] 
+                for word in token_list: 
+                    lexeme = nlp.vocab[word]
+                    if lexeme.is_stop == False and lexeme.is_punct == False:
+                        filtered.append(word)
+                        
+                filtered = [re.sub(r"[^A-Za-z@]", "", word) for word in filtered]
+                filtered = [word for word in filtered if word!='']
+                token_sum.extend(filtered)
+            except:
+                pass
+                
+        token_freq = defaultdict(int)
+        for token in token_sum:
+                token_freq[token] += 1
+                
+        return token_freq
+    else:
+        return 'NULL'
+        
+def generate_freq_mixbyrating(rating=0):
+    target_colgate_wordfreq=pd.DataFrame()
+    target_oralb_wordfreq=pd.DataFrame()
+    target_philiip_wordfreq=pd.DataFrame()
+    bestbuy_colgate_wordfreq=pd.DataFrame()
+    bestbuy_oralb_wordfreq=pd.DataFrame()
+    bestbuy_philiip_wordfreq=pd.DataFrame()
+    amazon_colgate_wordfreq=pd.DataFrame()
+    amazon_oralb_wordfreq=pd.DataFrame()
+    amazon_philiip_wordfreq=pd.DataFrame()
+    
+    files=[target_colgate_wordfreq,
+           target_oralb_wordfreq,
+           target_philiip_wordfreq,
+           bestbuy_colgate_wordfreq,
+           bestbuy_oralb_wordfreq,
+           bestbuy_philiip_wordfreq,
+           amazon_colgate_wordfreq,
+           amazon_oralb_wordfreq,
+           amazon_philiip_wordfreq]
+    
+    for mission,file,file_name in zip(missions,files,file_names):
+        token_list=[]
+        token_freq=[]
+        token_pos=[]
+        worddict=nlpword(mission,rating)
+        if worddict != 'NULL':
+            worddict=sorted(worddict.items(),key = lambda kv:(kv[1], kv[0]),reverse=True)
+            
+            for tupleword in worddict:
+                token_list.append(tupleword[0])
+                token_freq.append(tupleword[1])
+            
+            for word in token_list:
+                text=nlp(word)
+                if len(text)==1:
+                    for token in text:
+                        token_pos.append(token.pos_)
+                else:
+                    token_pos.append('NOUN')
+            file['token']=token_list
+            file['freq']=token_freq
+            file['pos']=token_pos
+            if rating<=5 and rating>0:
+                file.to_csv(path+os.sep+file_name+'_wordfreq_rating'+str(rating)+'.csv',encoding='utf_8_sig')
+            else:
+                file.to_csv(path+os.sep+file_name+'.csv',encoding='utf_8_sig')
+        else:
+            print(file_name+' rating '+str(rating)+' do not exist')
+
+def create_word_cloud_by_words_count(file,postype):    
+    from wordcloud import WordCloud
+    import matplotlib.pyplot as plt
+    
+    if type(file) == str:
+        worddict = pd.read_csv (path + os.sep + file + '.csv',header=None, index_col=1, squeeze=True)
+        if type(postype) == str:
+            worddict = worddict[worddict[3]==postype]
+        else:
+            pass
+        worddict = worddict[worddict.columns[1]]
+        worddict = worddict.iloc[1:]
+        worddict = worddict.astype(int)
+        worddict = worddict.to_dict()
+        
+        wc = WordCloud(
+            background_color ='white',
+            max_words=200,
+            width=1920,
+            height=1080)
+        
+        word_cloud = wc.generate_from_frequencies(worddict)
+        word_cloud.to_file(path+os.sep+ file + ".jpg")
+        plt.figure(dpi=150)
+        plt.imshow(word_cloud)
+        plt.axis("off")
+        plt.show()
+    else:
+        print('Please enter the file name')
+    
+if __name__ == "__main__":
+    #Web Crawler
+    
+    #Data Cleaning
+    for mission in missions[0:3]:
+        mission["rating"] = list(map(lambda x: int(x[0]), mission["stars"]))
+        
+    cleanword=[]
+    for row in range(0,len(target_philiip_df)):
+        if '[This review was collected as part of a promotion.]' in target_philiip_df['content'].iloc[row]:
+            cleanword.append(target_philiip_df['content'].iloc[row][52:])
+        else:
+            cleanword.append(target_philiip_df['content'].iloc[row])
+    target_philiip_df['content']=cleanword
+    
+    for mission,file_name in zip(missions,file_names):
+        mission=length_count(mission)
+        mission.to_csv(path+os.sep+file_name+'.csv',encoding='utf_8_sig')
+                
+    #NLP
+    generate_freq_mixbyrating()
+    print('Word frequency of all review generation completed')
+    generate_freq_mixbyrating(5)
+    print('Word frequency of Five-star rating review generation completed')
+    generate_freq_mixbyrating(1)
+    print('Word frequency of One-star rating review generation completed')
+
